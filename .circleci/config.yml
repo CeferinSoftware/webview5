@@ -1,0 +1,60 @@
+version: 2.1
+
+orbs:
+  flutter: circleci/flutter@2.0.1
+  android: circleci/android@2.3.0
+
+parameters:
+  app_name:
+    type: string
+    default: "Flutter App"
+  package_name:
+    type: string
+    default: "com.example.app"
+  app_url:
+    type: string
+    default: "https://example.com"
+  target_platform:
+    type: string
+    default: "android"
+
+jobs:
+  build_android:
+    executor: cimg/android:2023.06
+    steps:
+      - checkout
+      - flutter/install_sdk_and_pub:
+          version: "3.16.0"
+      - run:
+          name: Flutter Build Android
+          command: |
+            flutter clean
+            flutter pub get
+            flutter build apk --release
+      - store_artifacts:
+          path: build/app/outputs/flutter-apk/
+          destination: android-apk
+
+  build_ios:
+    macos:
+      xcode: 15.0.0
+    resource_class: macos.m1.medium.gen1
+    steps:
+      - checkout
+      - flutter/install_sdk_and_pub:
+          version: "3.16.0"
+      - run:
+          name: Flutter Build iOS
+          command: |
+            flutter clean
+            flutter pub get
+            flutter build ios --release --no-codesign
+      - store_artifacts:
+          path: build/ios/iphoneos/
+          destination: ios-build
+
+workflows:
+  build_and_deploy:
+    jobs:
+      - build_android
+      - build_ios
