@@ -17,6 +17,9 @@ parameters:
   target_platform:
     type: string
     default: "android"
+  enable_chatbot:
+    type: boolean
+    default: false
 
 jobs:
   build_android:
@@ -26,35 +29,47 @@ jobs:
       - flutter/install_sdk_and_pub:
           version: "3.16.0"
       - run:
-          name: Flutter Build Android
+          name: Setup Android SDK 35
           command: |
-            flutter clean
-            flutter pub get
-            flutter build apk --release
-      - store_artifacts:
-          path: build/app/outputs/flutter-apk/
-          destination: android-apk
-
-  build_ios:
-    macos:
-      xcode: 15.0.0
-    resource_class: macos.m1.medium.gen1
-    steps:
-      - checkout
-      - flutter/install_sdk_and_pub:
-          version: "3.16.0"
+            sdkmanager "platforms;android-35"
+            sdkmanager "build-tools;35.0.0"
       - run:
-          name: Flutter Build iOS
+          name: Generate keystore
           command: |
-            flutter clean
-            flutter pub get
-            flutter build ios --release --no-codesign
+            if [ -n "$KEYSTORE_PASSWORD" ]; then
+              keytool -genkey -v -keystore android/app/key.jks \
+                -keyalg RSA -keysize 2048 -validity 10000 \
+                -alias $KEY_ALIAS \
+                -storepass $KEYSTORE_PASSWORD \
+                -keypass $KEY_PASSWORD \
+                -dname "CN=<< pipeline.parameters.app_name >>, OU=Mobile, O=Company, L=City, S=State, C=US"
+            fi
+      - run:
+          name: Create key.properties
+          command: |
+            if [ -n "$KEYSTORE_PASSWORD" ]; then
+              echo "storePassword=$KEYSTORE_PASSWORD" > android/key.properties
+              echo "keyPassword=$KEY_PASSWORD" >> android/key.properties
+              echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+              echo "storeFile=key.jks" >> android/key.properties
+            fi
+      - run:
+          name: Build Android APK
+          command: flutter build apk --release --target-platform android-arm64
+      - run:
+          name: Build Android AAB
+          command: flutter build appbundle --release --target-platform android-arm64
       - store_artifacts:
-          path: build/ios/iphoneos/
-          destination: ios-build
+          path: build/app/outputs/flutter-apk/app-release.apk
+          destination: app-release.apk
+      - store_artifacts:
+          path: build/app/outputs/bundle/release/app-release.aab
+          destination: app-release.aab
+      - store_artifacts:
+          path: android/app/key.jks
+          destination: keystore.jks
 
 workflows:
   build_and_deploy:
     jobs:
       - build_android
-      - build_ios
