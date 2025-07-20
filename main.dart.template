@@ -1,0 +1,229 @@
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: '{{APP_NAME}}',
+      theme: ThemeData(
+        primarySwatch: MaterialColor(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF')), {
+          50: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))).withOpacity(0.1),
+          100: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))).withOpacity(0.2),
+          200: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))).withOpacity(0.3),
+          300: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))).withOpacity(0.4),
+          400: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))).withOpacity(0.5),
+          500: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))),
+          600: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))).withOpacity(0.7),
+          700: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))).withOpacity(0.8),
+          800: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))).withOpacity(0.9),
+          900: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))),
+        }),
+        useMaterial3: true,
+      ),
+      home: const WebViewScreen(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class WebViewScreen extends StatefulWidget {
+  const WebViewScreen({super.key});
+
+  @override
+  State<WebViewScreen> createState() => _WebViewScreenState();
+}
+
+class _WebViewScreenState extends State<WebViewScreen> {
+  late final WebViewController controller;
+  bool isLoading = true;
+  bool hasError = false;
+  String errorMessage = '';
+  bool canGoBack = false;
+  bool canGoForward = false;
+  
+  // Configuración de la app
+  final String appName = '{{APP_NAME}}';
+  final String appUrl = '{{APP_URL}}';
+  final bool enableJavaScript = {{ENABLE_JAVASCRIPT}} == 'unrestricted';
+  final bool enableZoom = {{ENABLE_ZOOM}};
+  final bool showProgressBar = {{SHOW_PROGRESS_BAR}};
+  final bool pullToRefresh = {{PULL_TO_REFRESH}};
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeWebView();
+  }
+
+  void _initializeWebView() {
+    controller = WebViewController()
+      ..setJavaScriptMode(enableJavaScript ? JavaScriptMode.unrestricted : JavaScriptMode.disabled)
+      ..setUserAgent('{{APP_NAME}} Mobile App - Android')
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (int progress) {
+            if (mounted) {
+              setState(() {
+                isLoading = progress < 100;
+              });
+            }
+          },
+          onPageStarted: (String url) {
+            if (mounted) {
+              setState(() {
+                isLoading = true;
+                hasError = false;
+              });
+            }
+          },
+          onPageFinished: (String url) async {
+            if (mounted) {
+              setState(() {
+                isLoading = false;
+              });
+              await _updateNavigationState();
+            }
+          },
+          onWebResourceError: (WebResourceError error) {
+            if (mounted) {
+              setState(() {
+                hasError = true;
+                errorMessage = error.description;
+                isLoading = false;
+              });
+            }
+          },
+          onNavigationRequest: (NavigationRequest request) {
+            // Permitir navegación dentro del dominio principal
+            if (request.url.startsWith(appUrl)) {
+              return NavigationDecision.navigate;
+            }
+            // Para enlaces externos, abrir en navegador
+            _launchURL(request.url);
+            return NavigationDecision.prevent;
+          },
+        ),
+      );
+      
+    if (enableZoom) {
+      controller.enableZoom(true);
+    }
+    
+    controller.loadRequest(Uri.parse(appUrl));
+  }
+  
+  Future<void> _updateNavigationState() async {
+    final bool backEnabled = await controller.canGoBack();
+    final bool forwardEnabled = await controller.canGoForward();
+    
+    if (mounted) {
+      setState(() {
+        canGoBack = backEnabled;
+        canGoForward = forwardEnabled;
+      });
+    }
+  }
+  
+  Future<void> _launchURL(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+  
+  Future<void> _refreshPage() async {
+    setState(() {
+      hasError = false;
+      isLoading = true;
+    });
+    await controller.reload();
+  }
+  
+  Widget _buildErrorView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+          const SizedBox(height: 16),
+          Text(
+            'Error de conexión',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            errorMessage.isNotEmpty ? errorMessage : 'No se pudo cargar la página',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _refreshPage,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildWebView() {
+    Widget webView = WebViewWidget(controller: controller);
+    
+    if (pullToRefresh) {
+      webView = RefreshIndicator(
+        onRefresh: _refreshPage,
+        child: webView,
+      );
+    }
+    
+    return webView;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(appName),
+        backgroundColor: Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: canGoBack ? () => controller.goBack() : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward),
+            onPressed: canGoForward ? () => controller.goForward() : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshPage,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (showProgressBar && isLoading)
+            LinearProgressIndicator(
+              backgroundColor: Colors.grey[300],
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Color(int.parse('{{PRIMARY_COLOR}}'.replaceAll('#', '0xFF'))),
+              ),
+            ),
+          Expanded(
+            child: hasError ? _buildErrorView() : _buildWebView(),
+          ),
+        ],
+      ),
+    );
+  }
+} 

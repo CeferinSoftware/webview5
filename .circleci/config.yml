@@ -7,54 +7,63 @@ orbs:
 parameters:
   app_name:
     type: string
-    default: "Flutter App"
+    default: "Kannasol"
   package_name:
     type: string
-    default: "com.example.app"
+    default: "com.empresa.kannasol"
   app_url:
     type: string
     default: "https://example.com"
   target_platform:
     type: string
     default: "android"
+  enable_chatbot:
+    type: boolean
+    default: false
 
 jobs:
   build_android:
     executor: cimg/android:2023.06
     steps:
       - checkout
-      - flutter/install_sdk_and_pub:
-          version: "3.16.0"
+      - restore_cache:
+          keys:
+            - flutter-pub-cache-v1-{{ checksum "pubspec.yaml" }}
+            - flutter-pub-cache-v1-
       - run:
-          name: Flutter Build Android
+          name: Install Flutter SDK
           command: |
-            flutter clean
-            flutter pub get
-            flutter build apk --release
-      - store_artifacts:
-          path: build/app/outputs/flutter-apk/
-          destination: android-apk
-
-  build_ios:
-    macos:
-      xcode: 15.0.0
-    resource_class: macos.m1.medium.gen1
-    steps:
-      - checkout
-      - flutter/install_sdk_and_pub:
-          version: "3.16.0"
+            if [ ! -d "$HOME/flutter" ]; then
+              git clone https://github.com/flutter/flutter.git -b stable $HOME/flutter
+            fi
+            echo "export PATH=$HOME/flutter/bin:$PATH" >> $BASH_ENV
+            source $BASH_ENV
+            flutter doctor
       - run:
-          name: Flutter Build iOS
-          command: |
-            flutter clean
-            flutter pub get
-            flutter build ios --release --no-codesign
+          name: Get Flutter dependencies
+          command: flutter pub get
+      - save_cache:
+          key: flutter-pub-cache-v1-{{ checksum "pubspec.yaml" }}
+          paths:
+            - ~/.pub-cache
+            - $HOME/flutter
+      - run:
+          name: Build Android APK
+          command: flutter build apk --release --target-platform android-arm64
+      - run:
+          name: Build Android AAB
+          command: flutter build appbundle --release --target-platform android-arm64
       - store_artifacts:
-          path: build/ios/iphoneos/
-          destination: ios-build
+          path: build/app/outputs/flutter-apk/app-release.apk
+          destination: app-release.apk
+      - store_artifacts:
+          path: build/app/outputs/bundle/release/app-release.aab
+          destination: app-release.aab
+      - store_artifacts:
+          path: android/app/key.jks
+          destination: keystore.jks
 
 workflows:
   build_and_deploy:
     jobs:
       - build_android
-      - build_ios
